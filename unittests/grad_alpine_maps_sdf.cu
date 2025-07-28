@@ -30,6 +30,7 @@
 
 using Scalar = double;
 using Vec2 = glm::vec<2, Scalar>;
+using Vec3 = glm::vec<3, Scalar>;
 
 namespace alpine {
 struct GeomData {
@@ -71,22 +72,21 @@ Scalar sdf(const GeomData& data, const Vec2& uv)
     return sqrt(result) * poly_sign;
 };
 
-Vec2 sdf_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
+Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
 {
     const auto grad_self_dot = [](const Vec2& v, Scalar incoming_grad) {
-        const auto grad_dot = stroke::grad::dot(v, v, incoming_grad);
-        return grad_dot.left() + grad_dot.right();
+        return Scalar(2) * v * incoming_grad;
     };
 
     Vec2 e0 = data.p1 - data.p0;
     Vec2 v0 = uv - data.p0;
     const auto dot0 = glm::dot(v0, e0);
-    const auto one_over_dot = 1 / glm::dot(e0, e0);
-    const auto div0 = dot0 * one_over_dot;
+    const auto one_over_dot0 = 1 / glm::dot(e0, e0);
+    const auto div0 = dot0 * one_over_dot0;
     Vec2 pq0 = v0 - e0 * glm::clamp(div0, Scalar(0), Scalar(1));
 
     Scalar poly_sign = 1.0;
-    Scalar result = 1.0;
+    Scalar distance_sq = 1.0;
 
     if (data.is_polygon) {
         Vec2 e1 = data.p2 - data.p1;
@@ -110,16 +110,18 @@ Vec2 sdf_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
         Vec2 d = min(min(d0, d1), d2);
 
         poly_sign = -glm::sign(d.y);
-        result = d.x;
+        distance_sq = d.x;
     } else {
-        result = dot(pq0, pq0);
+        distance_sq = dot(pq0, pq0);
     }
 
-    // return sqrt(result) * poly_sign;
+    // return sqrt(distance_sq) * poly_sign;
+    const auto sdf_val = sqrt(distance_sq) * poly_sign;
+
     const auto grad_sqrt_V = incoming_grad * poly_sign;
 
     // no grad for poly_sign
-    const auto grad_result = stroke::grad::sqrt(result, grad_sqrt_V);
+    const auto grad_distance_sq = stroke::grad::sqrt(distance_sq, grad_sqrt_V);
     Vec2 grad_uv = {};
     Vec2 grad_pq0 = {};
     if (data.is_polygon) {
@@ -129,10 +131,10 @@ Vec2 sdf_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
         Vec2 v2 = uv - data.p2;
         const auto dot1 = glm::dot(v1, e1);
         const auto dot2 = glm::dot(v2, e2);
-        const auto dot3 = glm::dot(e1, e1);
-        const auto dot4 = glm::dot(e2, e2);
-        const auto div1 = dot1 / dot3;
-        const auto div2 = dot2 / dot4;
+        const auto one_over_dot1 = 1 / glm::dot(e1, e1);
+        const auto one_over_dot2 = 1 / glm::dot(e2, e2);
+        const auto div1 = dot1 * one_over_dot1;
+        const auto div2 = dot2 * one_over_dot2;
         const auto clamp1 = glm::clamp(div1, Scalar(0), Scalar(1));
         const auto clamp2 = glm::clamp(div2, Scalar(0), Scalar(1));
         Vec2 pq1 = v1 - e1 * clamp1;
@@ -150,12 +152,12 @@ Vec2 sdf_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
         Scalar grad_d2_x = 0;
         // Scalar d = min(min(d0, d1), d2);
         if (d0.x <= d1.x && d0.x <= d2.x) {
-            grad_d0_x = grad_result;
+            grad_d0_x = grad_distance_sq;
         } else if (d1.x < d0.x && d1.x <= d2.x) {
-            grad_d1_x = grad_result;
+            grad_d1_x = grad_distance_sq;
         } else {
             assert(d2.x <= d0.x && d2.x <= d1.x);
-            grad_d2_x = grad_result;
+            grad_d2_x = grad_distance_sq;
         }
         grad_pq0 = grad_self_dot(pq0, grad_d0_x);
         const auto grad_pq1 = grad_self_dot(pq1, grad_d1_x);
@@ -177,48 +179,33 @@ Vec2 sdf_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
         // const auto clamp2 = glm::clamp(div2, Scalar(0), Scalar(1));
         auto grad_div2 = stroke::grad::clamp(div2, Scalar(0), Scalar(1), grad_clamp2);
 
-        // const auto div1 = dot1 / dot3;
-        const auto [grad_dot1, grad_dot3] = stroke::grad::divide_a_by_b(dot1, dot3, grad_div1);
+        // const auto div1 = dot1 * one_over_dot1;
+        const auto grad_dot1 = grad_div1 * one_over_dot1;
 
-        // const auto div2 = dot2 / dot4;
-        const auto [grad_dot2, grad_dot4] = stroke::grad::divide_a_by_b(dot2, dot4, grad_div2);
+        // const auto div2 = dot2 * one_over_dot2;
+        const auto grad_dot2 = grad_div2 * one_over_dot2;
 
         // const auto dot1 = glm::dot(v1, e1);
         stroke::grad::dot(v1, e1, grad_dot1).addTo(&grad_v1, &grad_e1);
         // const auto dot2 = glm::dot(v2, e2);
         stroke::grad::dot(v2, e2, grad_dot2).addTo(&grad_v2, &grad_e2);
-        // const auto dot3 = glm::dot(e1, e1);
-        stroke::grad::dot(e1, e1, grad_dot3).addTo(&grad_e1, &grad_e1);
-        // const auto dot4 = glm::dot(e2, e2);
-        stroke::grad::dot(e2, e2, grad_dot4).addTo(&grad_e2, &grad_e2);
 
         // continue with
-        // Vec2 e1 = data.p2 - data.p1;
-        // Vec2 e2 = data.p0 - data.p2;
-        // Vec2 v1 = uv - data.p1;
-        // Vec2 v2 = uv - data.p2;
         grad_uv += grad_v1 + grad_v2;
 
     } else {
         // result = dot(pq0, pq0);
-        grad_pq0 += grad_self_dot(pq0, grad_result);
+        grad_pq0 += grad_self_dot(pq0, grad_distance_sq);
     }
-
-    // Vec2 e0 = data.p1 - data.p0;
-    // Vec2 v0 = uv - data.p0;
-    // const auto dot0 = glm::dot(v0, e0);
-    // const auto one_over_dot = 1 / glm::dot(e0, e0);
-    // const auto div0 = dot0 * one_over_dot;
-    // Vec2 pq0 = v0 - e0 * glm::clamp(div0, Scalar(0), Scalar(1));
 
     Vec2 grad_v0 = grad_pq0;
     const auto grad_clamp = -glm::dot(grad_pq0, e0);
     const auto grad_div0 = stroke::grad::clamp(div0, Scalar(0), Scalar(1), grad_clamp);
-    const auto grad_dot0 = grad_div0 * one_over_dot;
+    const auto grad_dot0 = grad_div0 * one_over_dot0;
     stroke::grad::dot(v0, e0, grad_dot0).addTo(&grad_v0, stroke::grad::Ignore::Grad);
     grad_uv += grad_v0;
 
-    return grad_uv;
+    return Vec3(sdf_val, grad_uv);
 };
 
 } // namespace alpine
@@ -274,6 +261,8 @@ TEST_CASE("alpine maps sdf")
                 const auto fun = [&](const whack::Tensor<Scalar, 1>& input) {
                     const auto uv = stroke::extract<Vec2>(input);
                     const auto d = alpine::sdf(data, uv);
+                    const auto d2 = sdf_with_grad(data, uv, 1);
+                    CHECK(Catch::Approx(d) == d2.x);
                     return stroke::pack_tensor<Scalar>(d);
                 };
 
@@ -281,9 +270,9 @@ TEST_CASE("alpine maps sdf")
                     const auto uv = stroke::extract<Vec2>(input);
                     const auto grad_incoming = stroke::extract<Scalar>(grad_output);
 
-                    const auto grad_outgoing = alpine::sdf_grad(data, uv, grad_incoming);
+                    const auto grad_outgoing = alpine::sdf_with_grad(data, uv, grad_incoming);
 
-                    return stroke::pack_tensor<Scalar>(grad_outgoing);
+                    return stroke::pack_tensor<Scalar>(grad_outgoing.y, grad_outgoing.z);
                 };
 
                 const auto uv = rnd.uniform2();
