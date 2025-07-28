@@ -118,10 +118,11 @@ Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
     // return sqrt(distance_sq) * poly_sign;
     const auto sdf_val = sqrt(distance_sq) * poly_sign;
 
-    const auto grad_sqrt_V = incoming_grad * poly_sign;
+    const auto grad_sqrt_V = incoming_grad;
 
     // no grad for poly_sign
-    const auto grad_distance_sq = stroke::grad::sqrt(distance_sq, grad_sqrt_V);
+    const auto grad_distance_sq = grad_sqrt_V / (2 * sdf_val);
+
     Vec2 grad_uv = {};
     Vec2 grad_pq0 = {};
     if (data.is_polygon) {
