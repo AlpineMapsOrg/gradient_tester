@@ -74,16 +74,12 @@ Scalar sdf(const GeomData& data, const Vec2& uv)
 
 Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
 {
-    const auto grad_self_dot = [](const Vec2& v, Scalar incoming_grad) {
-        return Scalar(2) * v * incoming_grad;
-    };
-
-    Vec2 e0 = data.p1 - data.p0;
-    Vec2 v0 = uv - data.p0;
+    const Vec2 e0 = data.p1 - data.p0;
+    const Vec2 v0 = uv - data.p0;
     const auto dot0 = glm::dot(v0, e0);
     const auto one_over_dot0 = 1 / glm::dot(e0, e0);
     const auto div0 = dot0 * one_over_dot0;
-    Vec2 pq0 = v0 - e0 * glm::clamp(div0, Scalar(0), Scalar(1));
+    const Vec2 pq0 = v0 - e0 * glm::clamp(div0, Scalar(0), Scalar(1));
 
     Scalar poly_sign = 1.0;
     Scalar distance_sq = 1.0;
@@ -96,10 +92,10 @@ Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
     Vec2 grad_uv = {};
     Vec2 grad_pq0 = {};
     if (data.is_polygon) {
-        Vec2 e1 = data.p2 - data.p1;
-        Vec2 e2 = data.p0 - data.p2;
-        Vec2 v1 = uv - data.p1;
-        Vec2 v2 = uv - data.p2;
+        const Vec2 e1 = data.p2 - data.p1;
+        const Vec2 e2 = data.p0 - data.p2;
+        const Vec2 v1 = uv - data.p1;
+        const Vec2 v2 = uv - data.p2;
         const auto dot1 = glm::dot(v1, e1);
         const auto dot2 = glm::dot(v2, e2);
         const auto one_over_dot1 = 1 / glm::dot(e1, e1);
@@ -108,13 +104,13 @@ Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
         const auto div2 = dot2 * one_over_dot2;
         const auto clamp1 = glm::clamp(div1, Scalar(0), Scalar(1));
         const auto clamp2 = glm::clamp(div2, Scalar(0), Scalar(1));
-        Vec2 pq1 = v1 - e1 * clamp1;
-        Vec2 pq2 = v2 - e2 * clamp2;
-        Scalar s = glm::sign(e0.x * e2.y - e0.y * e2.x);
-        Vec2 d0 = Vec2(glm::dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x));
-        Vec2 d1 = Vec2(glm::dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x));
-        Vec2 d2 = Vec2(glm::dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x));
-        Vec2 d = min(min(d0, d1), d2);
+        const Vec2 pq1 = v1 - e1 * clamp1;
+        const Vec2 pq2 = v2 - e2 * clamp2;
+        const Scalar s = glm::sign(e0.x * e2.y - e0.y * e2.x);
+        const Vec2 d0 = Vec2(glm::dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x));
+        const Vec2 d1 = Vec2(glm::dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x));
+        const Vec2 d2 = Vec2(glm::dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x));
+        const Vec2 d = min(min(d0, d1), d2);
 
         poly_sign = -glm::sign(d.y);
         distance_sq = d.x;
@@ -133,25 +129,25 @@ Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
             assert(d2.x <= d0.x && d2.x <= d1.x);
             grad_d2_x = grad_distance_sq;
         }
-        grad_pq0 = grad_self_dot(pq0, grad_d0_x);
-        const auto grad_pq1 = grad_self_dot(pq1, grad_d1_x);
-        const auto grad_pq2 = grad_self_dot(pq2, grad_d2_x);
+        grad_pq0 = Scalar(2) * pq0 * grad_d0_x;
+        const auto grad_pq1 = Scalar(2) * pq1 * grad_d1_x;
+        const auto grad_pq2 = Scalar(2) * pq2 * grad_d2_x;
 
         // Vec2 pq1 = v1 - e1 * clamp1;
         auto grad_v1 = grad_pq1;
         auto grad_e1 = -grad_pq1 * clamp1;
-        auto grad_clamp1 = -glm::dot(e1, grad_pq1);
+        const auto grad_clamp1 = -glm::dot(e1, grad_pq1);
 
         // Vec2 pq2 = v2 - e2 * clamp2;
         auto grad_v2 = grad_pq2;
         auto grad_e2 = -grad_pq2 * clamp2;
-        auto grad_clamp2 = -glm::dot(e2, grad_pq2);
+        const auto grad_clamp2 = -glm::dot(e2, grad_pq2);
 
         // const auto clamp1 = glm::clamp(div1, Scalar(0), Scalar(1));
-        auto grad_div1 = stroke::grad::clamp(div1, Scalar(0), Scalar(1), grad_clamp1);
+        const auto grad_div1 = stroke::grad::clamp(div1, Scalar(0), Scalar(1), grad_clamp1);
 
         // const auto clamp2 = glm::clamp(div2, Scalar(0), Scalar(1));
-        auto grad_div2 = stroke::grad::clamp(div2, Scalar(0), Scalar(1), grad_clamp2);
+        const auto grad_div2 = stroke::grad::clamp(div2, Scalar(0), Scalar(1), grad_clamp2);
 
         // const auto div1 = dot1 * one_over_dot1;
         const auto grad_dot1 = grad_div1 * one_over_dot1;
@@ -160,16 +156,18 @@ Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
         const auto grad_dot2 = grad_div2 * one_over_dot2;
 
         // const auto dot1 = glm::dot(v1, e1);
-        stroke::grad::dot(v1, e1, grad_dot1).addTo(&grad_v1, &grad_e1);
+        grad_v1 += e1 * grad_dot1;
+        grad_e1 += v1 * grad_dot1;
         // const auto dot2 = glm::dot(v2, e2);
-        stroke::grad::dot(v2, e2, grad_dot2).addTo(&grad_v2, &grad_e2);
+        grad_v2 += e2 * grad_dot2;
+        grad_e2 += v2 * grad_dot2;
 
         // continue with
         grad_uv += grad_v1 + grad_v2;
 
     } else {
         // result = dot(pq0, pq0);
-        grad_pq0 += grad_self_dot(pq0, grad_distance_sq);
+        grad_pq0 += Scalar(2) * pq0 * grad_distance_sq;
         distance_sq = dot(pq0, pq0);
     }
 
@@ -177,7 +175,7 @@ Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
     const auto grad_clamp = -glm::dot(grad_pq0, e0);
     const auto grad_div0 = stroke::grad::clamp(div0, Scalar(0), Scalar(1), grad_clamp);
     const auto grad_dot0 = grad_div0 * one_over_dot0;
-    stroke::grad::dot(v0, e0, grad_dot0).addTo(&grad_v0, stroke::grad::Ignore::Grad);
+    grad_v0 += e0 * grad_dot0;
     grad_uv += grad_v0;
     const auto sdf_val = sqrt(distance_sq) * poly_sign;
 
