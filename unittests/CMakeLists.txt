@@ -22,6 +22,7 @@ add_executable(stroke_unittests
     grad_linalg.cu
     grad_scalar_functions.cu
     grad_quaternions.cu
+    grad_alpine_maps_sdf.cu
 
 )
 
