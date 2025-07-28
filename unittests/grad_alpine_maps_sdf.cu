@@ -121,7 +121,7 @@ Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
     const auto grad_sqrt_V = incoming_grad;
 
     // no grad for poly_sign
-    const auto grad_distance_sq = grad_sqrt_V / (2 * sdf_val);
+    const auto grad_distance_sq = grad_sqrt_V;
 
     Vec2 grad_uv = {};
     Vec2 grad_pq0 = {};
@@ -206,7 +206,7 @@ Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
     stroke::grad::dot(v0, e0, grad_dot0).addTo(&grad_v0, stroke::grad::Ignore::Grad);
     grad_uv += grad_v0;
 
-    return Vec3(sdf_val, grad_uv);
+    return Vec3(sdf_val, grad_uv / (2 * sdf_val));
 };
 
 } // namespace alpine
