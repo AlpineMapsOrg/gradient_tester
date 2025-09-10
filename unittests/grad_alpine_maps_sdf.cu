@@ -39,21 +39,32 @@ struct GeomData {
     Vec2 p2;
 
     bool is_polygon;
+
+    bool line_cap0;
+    bool line_cap1;
+
+    // normally in style, but for this test putting it here should be good enough
+    Scalar line_width;
+    Vec2 dash_info;
+    bool round_line_caps;
 };
 
-Scalar sdf(const GeomData& data, const Vec2& uv)
+Scalar sdf(const GeomData& data, const Vec2& uv, Scalar line_width, Vec2 dash_info, bool round_line_caps)
 {
     Vec2 e0 = data.p1 - data.p0;
     Vec2 v0 = uv - data.p0;
-    Vec2 pq0 = v0 - e0 * glm::clamp(glm::dot(v0, e0) / glm::dot(e0, e0), Scalar(0), Scalar(1));
+    Vec2 v1 = uv - data.p1;
+
+    Scalar h = glm::clamp(glm::dot(v0, e0) / glm::dot(e0, e0), Scalar(0), Scalar(1));
+    Vec2 pq0 = v0 - e0 * h;
 
     Scalar poly_sign = 1.0;
     Scalar result = 1.0;
+    Scalar mask = 1.0;
 
     if (data.is_polygon) {
         Vec2 e1 = data.p2 - data.p1;
         Vec2 e2 = data.p0 - data.p2;
-        Vec2 v1 = uv - data.p1;
         Vec2 v2 = uv - data.p2;
         Vec2 pq1 = v1 - e1 * glm::clamp(glm::dot(v1, e1) / glm::dot(e1, e1), Scalar(0), Scalar(1));
         Vec2 pq2 = v2 - e2 * glm::clamp(glm::dot(v2, e2) / glm::dot(e2, e2), Scalar(0), Scalar(1));
@@ -66,10 +77,22 @@ Scalar sdf(const GeomData& data, const Vec2& uv)
         poly_sign = -glm::sign(d.y);
         result = d.x;
     } else {
-        result = dot(pq0, pq0);
+        Scalar line_length = glm::length(e0);
+
+        Scalar amount_dash_gap_pairs = glm::ceil(line_length/dash_info.y);
+        // by moving the value in the fract by a constant style.dash_info.x/2.0 -> we make sure that half each segment starts with half a dash and ends with half a dash
+        Scalar dashes = Scalar(1)-glm::step(dash_info.x,glm::fract(h*amount_dash_gap_pairs+dash_info.x/Scalar(2)));
+
+        // check if we need to use the "butt" line ending
+        Scalar line_endings = glm::mix(Scalar(1), glm::step(Scalar(0),glm::dot(glm::normalize(e0), v0)), Scalar(!round_line_caps && data.line_cap0));
+        line_endings *= glm::mix(Scalar(1), glm::step(Scalar(0),glm::dot(glm::normalize(-e0), v1)), Scalar(!round_line_caps && data.line_cap1));
+
+        mask = line_endings*dashes;
+
+        result = glm::dot(pq0, pq0);
     }
 
-    return sqrt(result) * poly_sign;
+    return (sqrt(result) * poly_sign - line_width) * mask;
 };
 
 Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
@@ -176,42 +199,84 @@ TEST_CASE("alpine maps sdf")
     {
 
         std::vector<alpine::GeomData> geomdata = {
-            { { 0.0, 0.0 }, { 1.0, 1.0 }, { 0.0, 1.0 }, true }, // left bottom triangle ( one edge goes through center)
-            { { 0.0, 0.0 }, { 0.5, 1.0 }, { 1.0, 0.5 }, true }, // triangle that encloses center
-            { { 0.0, 0.0 }, { 0.2, 1.0 }, { 0.0, 1.0 }, true }, // triangle that is away from center
+            { { 0.0, 0.0 }, { 1.0, 1.0 }, { 0.0, 1.0 }, true, false, false, 0.0, {1.0, 1.0}, true }, // left bottom triangle ( one edge goes through center)
+            { { 0.0, 0.0 }, { 0.5, 1.0 }, { 1.0, 0.5 }, true, false, false, 0.0, {1.0, 1.0}, true }, // triangle that encloses center
+            { { 0.0, 0.0 }, { 0.2, 1.0 }, { 0.0, 1.0 }, true, false, false, 0.0, {1.0, 1.0}, true }, // triangle that is away from center
 
-            { { 0.0, 0.0 }, { 0.0, 1.0 }, { 0.0, 0.0 }, false }, // horizontal line at uv border
-            { { 0.0, 0.0 }, { 1.0, 0.0 }, { 0.0, 0.0 }, false }, // vertical line at uv border
-            { { 0.0, 0.0 }, { 1.0, 1.0 }, { 0.0, 0.0 }, false }, // diagonal line through center
+            { { 0.0, 0.0 }, { 0.0, 1.0 }, { 0.0, 0.0 }, false, false, false }, // horizontal line at uv border
+            { { 0.0, 0.0 }, { 1.0, 0.0 }, { 0.0, 0.0 }, false, false, false }, // vertical line at uv border
+            { { 0.0, 0.0 }, { 1.0, 1.0 }, { 0.0, 0.0 }, false, false, false }, // diagonal line through center
 
-            { { 0.06, -0.04 }, { 0.7, 0.62 }, { 0.46, 0.78 }, true },
-            { { 0.58, 1.1 }, { 0.9, 0.94 }, { -0.08, 0.38 }, true },
-            { { 0.22, 0.54 }, { 0.7, 0 }, { 0.62, 0.82 }, true },
-            { { 0.82, 0.8 }, { 0.52, -0.02 }, { 0.32, 1.12 }, true },
-            { { 0.44, 0.22 }, { 0.82, 0.04 }, { 0.78, 0.38 }, true },
-            { { 0.86, 0.88 }, { -0.02, 0.12 }, { 0.4, 0.8 }, true },
-            { { 0.78, 1.16 }, { -0.06, 0.1 }, { 0.5, 0.38 }, true },
-            { { 1, 0.24 }, { -0.06, 0.84 }, { 0.32, -0.04 }, true },
-            { { 0.54, 1.02 }, { 0.94, 1.02 }, { 0.86, 1.12 }, true },
-            { { 0.8, 0.6 }, { 0.28, 0.82 }, { 1, 0.98 }, true },
-            { { 0, 0.56 }, { 0.18, 0.54 }, { 0.92, -0.02 }, true },
-            { { 0.76, 1.02 }, { 0.14, 0.88 }, { 0.22, 1.18 }, true },
-            { { 1.16, 0.66 }, { 0.42, 1.1 }, { 0.64, 0.08 }, true },
-            { { 0.44, 0.44 }, { 0.68, 0.56 }, { 1.16, 0.22 }, true },
-            { { -0.1, 0.26 }, { 1, 0.18 }, { 0.5, 1.04 }, true },
-            { { 0.24, 1.16 }, { 0.7, 0.56 }, { 0.14, 0.82 }, true },
-            { { 0, 0.28 }, { 1.18, 0.58 }, { 0.96, 1.06 }, true },
-            { { 0.7, 0.78 }, { 0.54, 0.48 }, { 0.66, 0.82 }, true },
-            { { 0.22, -0.1 }, { 0.78, 1 }, { 0.86, 0.82 }, true },
-            { { 0, 0.56 }, { 0.18, 0.54 }, { 0, 0 }, false },
-            { { 0.76, 1.02 }, { 0.14, 0.88 }, { 0, 0 }, false },
-            { { 1.16, 0.66 }, { 0.42, 1.1 }, { 0, 0 }, false },
-            { { 0.44, 0.44 }, { 0.68, 0.56 }, { 0, 0 }, false },
-            { { -0.1, 0.26 }, { 1, 0.18 }, { 0, 0 }, false },
-            { { 0.24, 1.16 }, { 0.7, 0.56 }, { 0, 0 }, false },
-            { { 0, 0.28 }, { 1.18, 0.58 }, { 0, 0 }, false },
-            { { 0.7, 0.78 }, { 0.54, 0.48 }, { 0, 0 }, false },
-            { { 0.22, -0.1 }, { 0.78, 1 }, { 0, 0 }, false },
+            { { 0.0, 0.0 }, { 0.0, 1.0 }, { 0.0, 0.0 }, false, true, true}, // horizontal line at uv border
+            { { 0.0, 0.0 }, { 1.0, 0.0 }, { 0.0, 0.0 }, false, true, true }, // vertical line at uv border
+            { { 0.0, 0.0 }, { 1.0, 1.0 }, { 0.0, 0.0 }, false, true, true }, // diagonal line through center
+
+            { { 0.0, 0.0 }, { 0.0, 1.0 }, { 0.0, 0.0 }, false, true, false}, // horizontal line at uv border
+            { { 0.0, 0.0 }, { 1.0, 0.0 }, { 0.0, 0.0 }, false, false, true }, // vertical line at uv border
+            { { 0.0, 0.0 }, { 1.0, 1.0 }, { 0.0, 0.0 }, false, true, false }, // diagonal line through center
+
+            { { 0.06, -0.04 }, { 0.7, 0.62 }, { 0.46, 0.78 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.58, 1.1 }, { 0.9, 0.94 }, { -0.08, 0.38 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.22, 0.54 }, { 0.7, 0 }, { 0.62, 0.82 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.82, 0.8 }, { 0.52, -0.02 }, { 0.32, 1.12 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.44, 0.22 }, { 0.82, 0.04 }, { 0.78, 0.38 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.86, 0.88 }, { -0.02, 0.12 }, { 0.4, 0.8 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.78, 1.16 }, { -0.06, 0.1 }, { 0.5, 0.38 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 1, 0.24 }, { -0.06, 0.84 }, { 0.32, -0.04 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.54, 1.02 }, { 0.94, 1.02 }, { 0.86, 1.12 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.8, 0.6 }, { 0.28, 0.82 }, { 1, 0.98 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0, 0.56 }, { 0.18, 0.54 }, { 0.92, -0.02 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.76, 1.02 }, { 0.14, 0.88 }, { 0.22, 1.18 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 1.16, 0.66 }, { 0.42, 1.1 }, { 0.64, 0.08 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.44, 0.44 }, { 0.68, 0.56 }, { 1.16, 0.22 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { -0.1, 0.26 }, { 1, 0.18 }, { 0.5, 1.04 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.24, 1.16 }, { 0.7, 0.56 }, { 0.14, 0.82 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0, 0.28 }, { 1.18, 0.58 }, { 0.96, 1.06 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.7, 0.78 }, { 0.54, 0.48 }, { 0.66, 0.82 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0.22, -0.1 }, { 0.78, 1 }, { 0.86, 0.82 }, true, false, false, 0.0, {1.0, 1.0}, true },
+            { { 0, 0.56 }, { 0.18, 0.54 }, { 0, 0 }, false, false, false, 0.05, {1.0, 1.0}, true },
+            { { 0.76, 1.02 }, { 0.14, 0.88 }, { 0, 0 }, false, false, false, 0.05, {1.0, 1.0}, true },
+            { { 1.16, 0.66 }, { 0.42, 1.1 }, { 0, 0 }, false, false, false, 0.05, {1.0, 1.0}, true },
+            { { 0.44, 0.44 }, { 0.68, 0.56 }, { 0, 0 }, false, false, false, 0.05, {1.0, 1.0}, true },
+            { { -0.1, 0.26 }, { 1, 0.18 }, { 0, 0 }, false, false, false, 0.05, {1.0, 1.0}, true },
+            // line endings -> but not at line segment end
+            { { 0.24, 1.16 }, { 0.7, 0.56 }, { 0, 0 }, false, false, false, 0.05, {1.0, 1.0}, false },
+            { { 0, 0.28 }, { 1.18, 0.58 }, { 0, 0 }, false, false, false, 0.05, {1.0, 1.0}, false },
+            { { 0.7, 0.78 }, { 0.54, 0.48 }, { 0, 0 }, false, false, false, 0.05, {1.0, 1.0}, false },
+            { { 0.22, -0.1 }, { 0.78, 1 }, { 0, 0 }, false, false, false, 0.05, {1.0, 1.0}, false },
+
+            // line endings
+            { { 0, 0.56 }, { 0.18, 0.54 }, { 0, 0 }, false, true, true, 0.05, {1.0, 1.0}, false },
+            { { 0.76, 1.02 }, { 0.14, 0.88 }, { 0, 0 }, false, true, true, 0.05, {1.0, 1.0}, false },
+            { { 1.16, 0.66 }, { 0.42, 1.1 }, { 0, 0 }, false, true, true, 0.05, {1.0, 1.0}, false },
+            { { 0.44, 0.44 }, { 0.68, 0.56 }, { 0, 0 }, false, true, true, 0.05, {1.0, 1.0}, false },
+            { { -0.1, 0.26 }, { 1, 0.18 }, { 0, 0 }, false, true, true, 0.05, {1.0, 1.0}, false },
+            { { 0.24, 1.16 }, { 0.7, 0.56 }, { 0, 0 }, false, true, true, 0.05, {1.0, 1.0}, false },
+            { { 0, 0.28 }, { 1.18, 0.58 }, { 0, 0 }, false, true, true, 0.05, {1.0, 1.0}, false },
+            { { 0.7, 0.78 }, { 0.54, 0.48 }, { 0, 0 }, false, true, true, 0.05, {1.0, 1.0}, false },
+            { { 0.22, -0.1 }, { 0.78, 1 }, { 0, 0 }, false, true, true, 0.05, {1.0, 1.0}, false },
+
+            // dashes
+            { { 0, 0.56 }, { 0.18, 0.54 }, { 0, 0 }, false, false, false, 0.05, {0.5, 0.05}, true },
+            { { 0.76, 1.02 }, { 0.14, 0.88 }, { 0, 0 }, false, false, false, 0.05, {0.7, 0.05}, true },
+            { { 1.16, 0.66 }, { 0.42, 1.1 }, { 0, 0 }, false, false, false, 0.05, {0.5, 0.5}, true },
+            { { 0.44, 0.44 }, { 0.68, 0.56 }, { 0, 0 }, false, false, false, 0.05, {0.5, 0.002}, true },
+            { { -0.1, 0.26 }, { 1, 0.18 }, { 0, 0 }, false, false, false, 0.05, {0.5, 0.05}, true },
+            { { 0.24, 1.16 }, { 0.7, 0.56 }, { 0, 0 }, false, false, false, 0.05, {0.5, 0.0005}, true },
+            { { 0, 0.28 }, { 1.18, 0.58 }, { 0, 0 }, false, false, false, 0.05, {0.2, 0.05}, true },
+            { { 0.7, 0.78 }, { 0.54, 0.48 }, { 0, 0 }, false, false, false, 0.05, {0.3, 0.05}, true },
+            { { 0.22, -0.1 }, { 0.78, 1 }, { 0, 0 }, false, false, false, 0.05, {0.4, 0.005}, true },
+
+            // dashes + line endings
+            { { 0, 0.56 }, { 0.18, 0.54 }, { 0, 0 }, false, true, true, 0.05, {0.5, 0.05}, false },
+            { { 0.76, 1.02 }, { 0.14, 0.88 }, { 0, 0 }, false, true, true, 0.05, {0.7, 0.05}, false },
+            { { 1.16, 0.66 }, { 0.42, 1.1 }, { 0, 0 }, false, true, true, 0.05, {0.5, 0.5}, false },
+            { { 0.44, 0.44 }, { 0.68, 0.56 }, { 0, 0 }, false, true, true, 0.05, {0.5, 0.002}, false },
+            { { -0.1, 0.26 }, { 1, 0.18 }, { 0, 0 }, false, true, true, 0.05, {0.5, 0.05}, false },
+            { { 0.24, 1.16 }, { 0.7, 0.56 }, { 0, 0 }, false, true, true, 0.05, {0.5, 0.0005}, false },
+            { { 0, 0.28 }, { 1.18, 0.58 }, { 0, 0 }, false, true, true, 0.05, {0.2, 0.05}, false },
+            { { 0.7, 0.78 }, { 0.54, 0.48 }, { 0, 0 }, false, true, true, 0.05, {0.3, 0.05}, false },
+            { { 0.22, -0.1 }, { 0.78, 1 }, { 0, 0 }, false, true, true, 0.05, {0.4, 0.005}, false },
         };
 
         whack::random::HostGenerator<Scalar> rnd;
@@ -220,7 +285,7 @@ TEST_CASE("alpine maps sdf")
             for (int i = 0; i < 10; ++i) {
                 const auto fun = [&](const whack::Tensor<Scalar, 1>& input) {
                     const auto uv = stroke::extract<Vec2>(input);
-                    const auto d = alpine::sdf(data, uv);
+                    const auto d = alpine::sdf(data, uv, data.line_width, data.dash_info, data.round_line_caps);
                     const auto d2 = sdf_with_grad(data, uv, 1);
                     CHECK(Catch::Approx(d) == d2.x);
                     return stroke::pack_tensor<Scalar>(d);
