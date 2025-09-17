@@ -80,12 +80,21 @@ Scalar sdf(const GeomData& data, const Vec2& uv, Scalar line_width, Vec2 dash_in
         Scalar line_length = glm::length(e0);
 
         Scalar amount_dash_gap_pairs = glm::ceil(line_length/dash_info.y);
-        // by moving the value in the fract by a constant style.dash_info.x/2.0 -> we make sure that half each segment starts with half a dash and ends with half a dash
-        Scalar dashes = Scalar(1)-glm::step(dash_info.x,glm::fract(h*amount_dash_gap_pairs+dash_info.x/Scalar(2)));
+        // + 0.01 -> small delta to remove artifacts if there shouldn't be any dashes
+        Scalar dash_period = cos(M_PI*h*amount_dash_gap_pairs*Scalar(2))+cos((Scalar(1)-dash_info.x)*M_PI)+Scalar(0.01);
+        // tanh is used as a differentiable step function -> all values above 0 are mapped to +1, all below to -1
+        // multiplication by big value ensures a quick transition at 0 +/- small delta
+        Scalar dashes = tanh(dash_period*Scalar(500000.0));
 
-        // check if we need to use the "butt" line ending
-        Scalar line_endings = glm::mix(Scalar(1), glm::step(Scalar(0),glm::dot(glm::normalize(e0), v0)), Scalar(!round_line_caps && data.line_cap0));
-        line_endings *= glm::mix(Scalar(1), glm::step(Scalar(0),glm::dot(glm::normalize(-e0), v1)), Scalar(!round_line_caps && data.line_cap1));
+        Scalar line_endings = 1.0;
+        if(!round_line_caps)
+        {
+            if(data.line_cap0)
+                line_endings *= dot(normalize(e0), v0);
+            if(data.line_cap1)
+                line_endings *= dot(normalize(-e0), v1);
+        }
+        line_endings = (tanh(line_endings*Scalar(500000.0))+Scalar(1)) / Scalar(2);
 
         mask = line_endings*dashes;
 
