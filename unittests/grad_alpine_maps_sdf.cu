@@ -101,7 +101,7 @@ Scalar sdf(const GeomData& data, const Vec2& uv, Scalar line_width, Vec2 dash_in
         result = glm::dot(pq0, pq0);
     }
 
-    return (sqrt(result) * poly_sign - line_width) * mask;
+    return (sqrt(result) * poly_sign) - (line_width * mask);
 };
 
 Vec3 sdf_with_grad(const GeomData& data, const Vec2& uv, Scalar incoming_grad)
